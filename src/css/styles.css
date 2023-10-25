@@ -1,13 +1,17 @@
 :root {
   --primary-font-family: 'Open Sans', sans-serif;
   --cards-gap: 20px;
+  --transition-duration-and-func: 250ms linear;
+  --main-color: rgba(6, 147, 186, 0.8);
+  --max-width: 1600px;
+  --main-width: 1500px;
 }
 
 /* ========= Reset Default Styles ========== */
 
 body {
   font-family: var(--primary-font-family);
-  max-width: 1600px;
+  max-width: var(--max-width);
   margin: 0 auto;
 }
 
@@ -44,64 +48,177 @@ textarea {
   resize: none;
 }
 
-/* ========== Main Styles ========== */
-/* ---------- Head ---------- */
+/* ========== General Styles ========== */
 
-.head {
-  padding-top: 20px;
-  padding-left: 15px;
-  padding-right: 15px;
-}
-
-.request-opts-container {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.request-opts-radios,
-.request-opts-types {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  margin-bottom: 20px;
-}
-
-.request-opts-item {
-  flex-basis: calc((100% / 2) - 156px);
+.section {
+  padding-top: 35px;
+  padding-bottom: 35px;
 }
 
 .default-option {
   color: rgba(157, 164, 189, 0.6);
 }
 
-.breed-select {
+/* ========== Header ========== */
+
+.header {
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  background-color: var(--main-color);
+}
+
+.request-opts-container {
+  max-width: 500px;
+  margin: 0 auto;
+  padding-right: 15px;
+  padding-left: 15px;
+}
+
+.request-opts-radios,
+.request-opts-types {
+  height: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.request-opts-radios {
   margin-bottom: 20px;
 }
 
-.loading-text-container {
+.radio-item {
   display: flex;
   align-items: center;
-  padding: 2.455px 0;
+  gap: 3px;
 }
 
-.loader,
-.error {
-  display: block;
-  min-width: max-content;
+.request-opts-item {
+  height: inherit;
+  max-width: calc(100% / 2);
+  flex-basis: calc((100% / 2) - 110px);
 }
 
-.hidden,
-.hidden * {
-  display: none;
+.breed-select {
+  padding: 0 6px;
 }
 
-/* ---------- Content ---------- */
+/* ========== Main ========== */
+
+.main-wrapper {
+  display: flex;
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+/* ========== Filters ========== */
+
+.filters-section {
+  max-width: calc(var(--max-width) * 0.25);
+  width: 100%;
+  padding-left: 20px;
+  padding-right: 10px;
+}
+
+.filter-buttons {
+  padding: 15px;
+  border: 1px solid tomato;
+}
+
+.main-filter-buttons,
+.secondary-filter-buttons {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.main-filter-buttons {
+  margin-bottom: 15px;
+}
+
+.filter-btn {
+  flex-basis: calc((100% / 2) - 15px);
+  height: 30px;
+}
+
+.filters-list {
+  padding: 15px;
+  border-right: 1px solid tomato;
+  border-left: 1px solid tomato;
+  border-bottom: 1px solid tomato;
+}
+
+.filter-item:not(:last-child) {
+  margin-bottom: 15px;
+}
+
+.main-filter-signature,
+.secondary-filter-signature {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.main-filter-signature {
+  margin-bottom: 5px;
+}
+
+.filter-signature-item {
+  flex-basis: calc((100% / 2) - 5px);
+  max-width: calc((100% / 2) - 5px);
+  text-align: center;
+  height: 30px;
+  padding: 0 6px;
+}
+
+.select-filter {
+  text-align: start;
+}
+
+/* ========== Content Section ========== */
 
 .content-section {
-  padding-left: 15px;
-  padding-right: 15px;
-  padding-bottom: 20px;
+  width: 100%;
+  height: 100%;
+  padding-left: 10px;
+  padding-right: 20px;
 }
+
+.sort-container {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  padding: 15px;
+  border: 1px solid tomato;
+  background-color: var(--main-color);
+}
+
+.content-container {
+  padding: 15px;
+
+  border-right: 1px solid tomato;
+  border-left: 1px solid tomato;
+  border-bottom: 1px solid tomato;
+}
+
+.select-sort-signature {
+  height: 30px;
+  width: 160px;
+  padding: 0 6px;
+}
+
+.sort-btn {
+  height: 30px;
+  width: 125px;
+}
+
+/* ========== Content Styling ========== */
 
 .exact-breed-info {
   display: flex;
@@ -120,12 +237,12 @@ textarea {
 .card-item {
   margin-top: var(--cards-gap);
   margin-left: var(--cards-gap);
-  flex-basis: calc((100% / 3) - var(--cards-gap));
+  flex-basis: calc((100% / 2) - var(--cards-gap));
 }
 
 .img-content {
-  width: 437px;
-  height: 300px;
+  width: 518px;
+  height: 357px;
   flex-shrink: 0;
 }
 
@@ -156,4 +273,12 @@ textarea {
 
 .param-name {
   font-weight: 600;
+}
+
+/* ========== Hidden ========== */
+
+.hidden,
+.hidden * {
+  display: none;
+  padding: 0;
 }

@@ -1,5 +1,6 @@
 const numberFilters = ['>', '<', '===', '<=', '>=', '!=='];
 const boolFilters = ['===', '!=='];
+const sortTypes = ['Asc', 'Desc', 'Rand'];
 
 const numberFilterParams = [
   'indoor',
@@ -18,7 +19,6 @@ const numberFilterParams = [
 ];
 
 const boolFilterParams = ['experimental', 'hairless', 'natural', 'rare', 'rex', 'suppressed_tail', 'short_legs'];
-// const boolFilterParams = ['experimental', 'hairless'];
 
 const allFilterParams = [
   'indoor',
@@ -43,4 +43,4 @@ const allFilterParams = [
   'short_legs',
 ];
 
-export { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams };
+export { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams, sortTypes };
