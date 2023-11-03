@@ -1,6 +1,6 @@
-import { fetchBreeds, fetchCatByBreed } from './js/cat_api';
+import { fetchBreeds, fetchCatByBreed } from '../src/js/cat_api';
 import randomImg from './images/random-cat.jpg';
-import { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams, sortTypes } from './js/create_filter_params';
+import { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams } from '../src/js/create_filter_params';
 
 // OBSERVER DATA
 
@@ -10,25 +10,20 @@ const observerOptions = {
   threshold: 1.0,
 };
 
-const allBreedsObserver = new IntersectionObserver(onAllBreedsObserve, observerOptions);
-const filterObserver = new IntersectionObserver(onFilterObserve, observerOptions);
+const observer = new IntersectionObserver(onObserve, observerOptions);
 
 // HEAD (REQUEST) DATA
 
-const PARAM_TEMPERAMENT = 'Temperament';
-const ALL_BREEDS_STORAGE_KEY = 'breeds';
-const CURRENT_FILTER_STORAGE_KEY = 'current_filter';
+const LOCAL_STORAGE_KEY_ALL_BREEDS = 'all_breeds';
 const GET_EXACT_REQUEST = 'get_exact_breed';
 const GET_ALL_REQUEST = 'get_all_breeds';
-const LIMIT_PER_REQUEST = 10;
-const UPDATE_PERIOD = 24 * 60 * 60 * 1000;
-
-let CURRENT_PAGE = 0;
+const SELECT_ALL_PARAMS = {
+  limit: 10,
+  page: 0,
+};
 let USED_FILTERS = [];
 let FILTERS_CREATED = 0;
 let totalBreedsNumber;
-let currentFilterBreedsNumber;
-let totalPages;
 
 // DOM DATA
 
@@ -46,27 +41,20 @@ const exactBreedContentBlock = document.querySelector('.exact-breed-info');
 const allBreedsContentBlock = document.querySelector('.all-breeds-info');
 const allBreedsList = document.querySelector('.breeds-list');
 
+// Messages
+const loaderMessage = document.querySelector('.loader');
+const errorMessage = document.querySelector('.error');
+
 // Threshold for infinite scroll
 const thresholdBlock = document.querySelector('.threshold');
 
-// Main wrapper
-const mainWrapper = document.querySelector('.main-wrapper');
-
 // Filters
-const filterSection = document.querySelector('.filters-section');
-const filtersContainer = document.querySelector('.filters-container');
+const filtersContainer = document.querySelector('.filters');
 const addFilterButton = document.querySelector('.add-filter-btn');
 const applyFilterButton = document.querySelector('.apply-filters-btn');
 const resetFiltersButton = document.querySelector('.reset-filters-btn');
 const removeFiltersButton = document.querySelector('.remove-filters-btn');
 const filtersList = document.querySelector('.filters-list');
-
-// Sort
-const sortContainer = document.querySelector('.sort-container');
-const selectSortFilter = document.querySelector('.select-sort-filter');
-const selectSortType = document.querySelector('.select-sort-type');
-const applySortButton = document.querySelector('.apply-sort-btn');
-const resetSortButton = document.querySelector('.reset-sort-btn');
 
 // Event listeners
 getExactBreedsRadio.addEventListener('change', onRadio);
@@ -95,7 +83,11 @@ const removeHiddenAttr = (obj) => {
 };
 
 const resetGetAllParams = () => {
-  CURRENT_PAGE = 0;
+  SELECT_ALL_PARAMS.page = 0;
+};
+
+const incrementPages = () => {
+  SELECT_ALL_PARAMS.page += 1;
 };
 
 const resetContent = (elem) => {
@@ -103,8 +95,8 @@ const resetContent = (elem) => {
 };
 
 const handleErrors = (err) => {
-  //   addHiddenAttr(loaderMessage);
-  //   removeHiddenAttr(errorMessage);
+  addHiddenAttr(loaderMessage);
+  removeHiddenAttr(errorMessage);
 
   console.log('Code: ', err.code);
   console.log('Message: ', err.message);
@@ -122,8 +114,7 @@ const handleCheckedRadio = (target) => {
     getAllBreedsBtn.disabled = true;
     removeHiddenAttr(exactBreedContentBlock);
     addHiddenAttr(allBreedsContentBlock);
-    addHiddenAttr(filterSection);
-    addHiddenAttr(sortContainer);
+    addHiddenAttr(filtersContainer);
     resetContent(allBreedsList);
     resetGetAllParams();
   } else if (target.checked && value === GET_ALL_REQUEST) {
@@ -131,8 +122,7 @@ const handleCheckedRadio = (target) => {
     getAllBreedsBtn.disabled = false;
     addHiddenAttr(exactBreedContentBlock);
     removeHiddenAttr(allBreedsContentBlock);
-    removeHiddenAttr(filterSection);
-    removeHiddenAttr(sortContainer);
+    removeHiddenAttr(filtersContainer);
     resetContent(exactBreedContentBlock);
   }
 };
@@ -158,32 +148,6 @@ const existFilters = () => {
   }
 };
 
-const setFilterSticky = () => {
-  if (filtersContainer.clientHeight < filterSection.clientHeight) {
-    filtersContainer.style.position = 'sticky';
-    filtersContainer.style.top = 0;
-  }
-};
-
-const updateCache = () => {
-  setInterval(async () => {
-    try {
-      const breedsData = await fetchBreeds();
-      cacheData(breedsData, ALL_BREEDS_STORAGE_KEY);
-      createBreedsList(breedsData);
-    } catch (err) {
-      handleErrors(err);
-    }
-  }, UPDATE_PERIOD);
-};
-
-const scrollToTop = () => {
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth',
-  });
-};
-
 // MAIN BUSINESS LOGIC
 
 onLoad();
@@ -194,59 +158,19 @@ function onRadio(evt) {
 
 async function onLoad() {
   handleCheckedRadio(checkedRadio);
-  setFilterSticky();
-  const cachedData = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
-  let breedsData;
 
-  if (!cachedData) {
-    try {
-      breedsData = await fetchBreeds();
-      cacheData(breedsData, ALL_BREEDS_STORAGE_KEY);
-    } catch (err) {
-      handleErrors(err);
-    }
-  } else {
-    breedsData = Object.values(cachedData).flat();
-    totalBreedsNumber = breedsData.length;
+  try {
+    const data = await fetchBreeds();
+    totalBreedsNumber = data.length;
+    const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select the breed</option>';
+    const markup = defaultOption + data.map((cat) => `<option class="select-item" value=${cat.id}>${cat.name}</option>`).join('');
+    selectBlock.insertAdjacentHTML('beforeend', markup);
+
+    addHiddenAttr(loaderMessage);
+    removeHiddenAttr(selectBlock);
+  } catch (err) {
+    handleErrors(err);
   }
-
-  createBreedsList(breedsData);
-  createSortList();
-  createSortTypes();
-  updateCache();
-  // addHiddenAttr(loaderMessage);
-  // removeHiddenAttr(selectBlock);
-  // removeHiddenAttr(sortContainer);
-}
-
-function cacheData(breedsData, storageKey) {
-  totalBreedsNumber = breedsData.length;
-  totalPages = Math.ceil(totalBreedsNumber / LIMIT_PER_REQUEST);
-
-  const cache = {};
-  for (let i = 0; i < totalPages; i++) {
-    cache[i] = breedsData.slice(i * LIMIT_PER_REQUEST, (i + 1) * LIMIT_PER_REQUEST);
-  }
-
-  localStorage.setItem(storageKey, JSON.stringify(cache));
-}
-
-function createBreedsList(data) {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select the breed</option>';
-  const markup = defaultOption + data.map((cat) => `<option class="select-item" value=${cat.id}>${cat.name}</option>`).join('');
-  selectBlock.innerHTML = markup;
-}
-
-function createSortList() {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select sort param</option>';
-  const markup = defaultOption + allFilterParams.map((param) => `<option class="select-item" value=${param}>${param}</option>`).join('');
-  selectSortFilter.insertAdjacentHTML('beforeend', markup);
-}
-
-function createSortTypes() {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select sort type</option>';
-  const markup = defaultOption + sortTypes.map((type) => `<option class="select-item" value=${type}>${type}</option>`).join('');
-  selectSortType.insertAdjacentHTML('beforeend', markup);
 }
 
 // FUNCTIONS TO OPERATE EXACT BREED
@@ -255,13 +179,13 @@ async function onSelectBreed(evt) {
   const breedId = evt.currentTarget.value;
 
   addHiddenAttr(exactBreedContentBlock);
-  //   removeHiddenAttr(loaderMessage);
-  //   addHiddenAttr(errorMessage);
+  removeHiddenAttr(loaderMessage);
+  addHiddenAttr(errorMessage);
 
   try {
     const data = await fetchCatByBreed(breedId);
     createExactBreedContentBlock(data[0]);
-    // addHiddenAttr(loaderMessage);
+    addHiddenAttr(loaderMessage);
     removeHiddenAttr(exactBreedContentBlock);
   } catch (err) {
     handleErrors(err);
@@ -274,6 +198,11 @@ function createExactBreedContentBlock(breedData) {
   const breedTemperament = breedData.breeds[0].temperament;
   const imgUrl = breedData.url;
 
+  let paramTemperament = Object.keys(breedData.breeds[0])
+    .filter((item) => item === 'temperament')
+    .toString();
+  paramTemperament = paramTemperament.replace(/^./, paramTemperament[0].toUpperCase());
+
   const markup = `
     <div class="img-content">
         <img class="cat-img" src="${imgUrl}" alt="${breedName}" />
@@ -281,7 +210,7 @@ function createExactBreedContentBlock(breedData) {
     <div class="text-content">
         <h2 class="subtitle">${breedName}</h2>
         <p class="text description">${breedDescription}</p>
-        <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
+        <p class="text params"><span class="param-name">${paramTemperament}: </span>${breedTemperament}</p>
     </div>`;
 
   exactBreedContentBlock.innerHTML = markup;
@@ -289,38 +218,50 @@ function createExactBreedContentBlock(breedData) {
 
 // FUNCTIONS TO OPERATE ALL BREEDS
 
-function onSelectAll() {
+async function onSelectAll() {
   addHiddenAttr(allBreedsContentBlock);
   addHiddenAttr(filtersContainer);
-  //   removeHiddenAttr(loaderMessage);
-  //   addHiddenAttr(errorMessage);
+  removeHiddenAttr(loaderMessage);
+  addHiddenAttr(errorMessage);
   resetContent(allBreedsList);
   resetGetAllParams();
 
-  const data = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
-  createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
-  removeHiddenAttr(filtersContainer);
-  removeHiddenAttr(allBreedsContentBlock);
-  filterObserver.unobserve(thresholdBlock);
-  allBreedsObserver.observe(thresholdBlock);
+  try {
+    const data = await fetchBreeds(SELECT_ALL_PARAMS);
+    createAllBreedsContentBlock(data);
+    addHiddenAttr(loaderMessage);
+    removeHiddenAttr(filtersContainer);
+    removeHiddenAttr(allBreedsContentBlock);
+    observer.observe(thresholdBlock);
+  } catch (err) {
+    handleErrors(err);
+  }
 }
 
-function onAllBreedsObserve(entries, observer) {
-  entries.forEach((entry) => {
+function onObserve(entries, observer) {
+  entries.forEach(async (entry) => {
     if (entry.isIntersecting && allBreedsList.innerHTML !== '') {
-      if (totalBreedsNumber <= LIMIT_PER_REQUEST * (CURRENT_PAGE + 1)) {
-        observer.unobserve(thresholdBlock);
-        resetGetAllParams();
-      } else {
-        CURRENT_PAGE += 1;
-        const data = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
-        createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
+      incrementPages();
+
+      try {
+        const data = await fetchBreeds(SELECT_ALL_PARAMS);
+        createAllBreedsContentBlock(data);
+        addHiddenAttr(loaderMessage);
+        removeHiddenAttr(allBreedsContentBlock);
+
+        if (totalBreedsNumber <= SELECT_ALL_PARAMS.limit * (SELECT_ALL_PARAMS.page + 1)) {
+          observer.unobserve(thresholdBlock);
+          resetGetAllParams();
+        }
+      } catch (err) {
+        handleErrors(err);
       }
     }
   });
 }
 
 function createAllBreedsContentBlock(breedData) {
+  const paramTemperament = 'Temperament';
   const cardSetMarkup = breedData.map((item) => {
     const breedName = item.name;
     const breedDescription = item.description;
@@ -335,7 +276,7 @@ function createAllBreedsContentBlock(breedData) {
         <div class="text-content">
             <h2 class="subtitle">${breedName}</h2>
             <p class="text description">${breedDescription}</p>
-            <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
+            <p class="text params"><span class="param-name">${paramTemperament}: </span>${breedTemperament}</p>
         </div>
       </li>`;
 
@@ -352,16 +293,12 @@ function onAddFilter() {
   const markup = `
       <li class="filter-item">
         <div class="filter-item-container">
-          <div class="main-filter-signature">
-            <select class="select-filter filter-signature-item">
-              ${createFiltersListMarkup()}
-            </select>
-            <button class="delete-filter filter-signature-item">Del</button>
-          </div>
-          <div class="secondary-filter-signature">
-            <select class="select-filter-type filter-signature-item hidden"></select>
-            <select class="select-filter-value filter-signature-item hidden"></select>
-          </div>
+          <select class="select-filter">
+            ${createFiltersListMarkup()}
+          </select>
+          <select class="select-filter-type hidden"></select>
+          <select class="select-filter-value hidden"></select>
+          <button class="delete-filter">Del</button>
         </div>
       </li>
     `;
@@ -377,29 +314,37 @@ function createFiltersListMarkup(currentValue = null) {
 
   const markup =
     '<optgroup label="Number filters">' +
-    createFilterOptGroupMarkup(numberFilterParams, currentValue).join('') +
+    numberFilterParams
+      .map((param) => {
+        if (USED_FILTERS.includes(param) && param !== currentValue) {
+          return;
+        }
+        const normalizedParam = normalizeParam(param);
+        return param === currentValue
+          ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
+          : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
+      })
+      .join('') +
     '</optgroup>' +
     '<optgroup label="Boolean filters">' +
-    createFilterOptGroupMarkup(boolFilterParams, currentValue).join('') +
+    boolFilterParams
+      .map((param) => {
+        if (USED_FILTERS.includes(param) && param !== currentValue) {
+          return;
+        }
+        const normalizedParam = normalizeParam(param);
+        return param === currentValue
+          ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
+          : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
+      })
+      .join('') +
     '</optgroup>';
 
   return defaultOption + markup;
 }
 
-function createFilterOptGroupMarkup(filterParamsList, currentValue) {
-  return filterParamsList.map((param) => {
-    if (USED_FILTERS.includes(param) && param !== currentValue) {
-      return;
-    }
-    const normalizedParam = normalizeParam(param);
-    return param === currentValue
-      ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
-      : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
-  });
-}
-
 // Select filter options handlers
-function selectFilter(evt) {
+async function selectFilter(evt) {
   if (evt.target.classList.contains('select-filter')) {
     const filter = evt.target.value;
     USED_FILTERS.push(filter);
@@ -414,7 +359,7 @@ function selectFilter(evt) {
     removeHiddenAttr(selectFilterType);
 
     try {
-      selectFilterValue.innerHTML = createFilterValuesOptions(filter);
+      selectFilterValue.innerHTML = await createFilterValuesOptions(filter);
       removeHiddenAttr(selectFilterValue);
     } catch (err) {
       handleErrors(err);
@@ -434,9 +379,9 @@ function createFilterTypeOptions(filter) {
   return defaultOption + markup;
 }
 
-function createFilterValuesOptions(filter) {
+async function createFilterValuesOptions(filter) {
   try {
-    const { minValue, maxValue } = getFilterMinMaxValues(filter);
+    const { minValue, maxValue } = await getFilterMinMaxValues(filter);
     const defaultOption = '<option class="select-option default-option" value="" disabled selected>Select condition</option>';
 
     const markup = [];
@@ -450,11 +395,19 @@ function createFilterValuesOptions(filter) {
   }
 }
 
-function getFilterMinMaxValues(filter) {
-  let allBreeds = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
-  const values = Object.values(allBreeds)
-    .flat()
-    .map((breed) => breed[filter]);
+async function getFilterMinMaxValues(filter) {
+  let allBreeds = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY_ALL_BREEDS));
+
+  if (!allBreeds) {
+    try {
+      allBreeds = await fetchBreeds();
+      localStorage.setItem(LOCAL_STORAGE_KEY_ALL_BREEDS, JSON.stringify(allBreeds));
+    } catch (err) {
+      handleErrors(err);
+    }
+  }
+
+  const values = allBreeds.map((item) => item[filter]);
   return { minValue: Math.min(...values), maxValue: Math.max(...values) };
 }
 
@@ -493,7 +446,7 @@ function resetFilters() {
   allFilterSelects.forEach((select) => (select.innerHTML = createFiltersListMarkup()));
 }
 
-function applyFilters() {
+async function applyFilters() {
   const fiterInput = Array.from(filtersList.children).map((filter) => {
     const filterParam = filter.querySelector('.select-filter').value;
     const filterOperand = filter.querySelector('.select-filter-type').value;
@@ -506,43 +459,21 @@ function applyFilters() {
     };
   });
 
-  const allBreeds = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
-  const filteredBreeds = Object.values(allBreeds)
-    .flat()
-    .filter((breed) => {
-      return fiterInput.every((input) => {
-        return eval(breed[input.param] + input.operand + input.value);
-      });
+  const allBreeds = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY_ALL_BREEDS));
+  const filteredBreeds = allBreeds.filter((breed) => {
+    return fiterInput.every((input) => {
+      return eval(breed[input.param] + input.operand + input.value);
     });
-
-  currentFilterBreedsNumber = filteredBreeds.length;
-  cacheData(filteredBreeds, CURRENT_FILTER_STORAGE_KEY);
-  const cachedCurrentFilter = JSON.parse(localStorage.getItem(CURRENT_FILTER_STORAGE_KEY));
-  renderFiltered(cachedCurrentFilter);
-}
-
-function onFilterObserve(entries, observer) {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting && allBreedsList.innerHTML !== '') {
-      if (currentFilterBreedsNumber <= LIMIT_PER_REQUEST * (CURRENT_PAGE + 1)) {
-        observer.unobserve(thresholdBlock);
-        resetGetAllParams();
-      } else {
-        CURRENT_PAGE += 1;
-        const data = JSON.parse(localStorage.getItem(CURRENT_FILTER_STORAGE_KEY));
-        createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
-      }
-    }
   });
+
+  renderFiltered(filteredBreeds);
 }
 
 function renderFiltered(data) {
   addHiddenAttr(allBreedsContentBlock);
   resetContent(allBreedsList);
   resetGetAllParams();
-  createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
-  scrollToTop();
-  allBreedsObserver.unobserve(thresholdBlock);
+  createAllBreedsContentBlock(data);
   removeHiddenAttr(allBreedsContentBlock);
-  filterObserver.observe(thresholdBlock);
+  observer.unobserve(thresholdBlock);
 }
