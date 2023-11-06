@@ -2,6 +2,8 @@ import { fetchBreeds, fetchCatByBreed } from './js/cat_api';
 import randomImg from './images/random-cat.jpg';
 import { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams, sortTypes } from './js/create_filter_params';
 import Notiflix from 'notiflix';
+import Handlebars from 'handlebars';
+import { exactBreedTpl, catCardTpl, addFiltersTpl, breedsListTpl, sortListTpl, sortTypesTpl, filterTypesTpl } from './js/templates';
 
 // OBSERVER DATA
 
@@ -13,6 +15,12 @@ const observerOptions = {
 
 const allBreedsObserver = new IntersectionObserver(onAllBreedsObserve, observerOptions);
 const filterObserver = new IntersectionObserver(onFilterObserve, observerOptions);
+
+// HANDLEBARS
+
+Handlebars.registerHelper('normalizeValue', function (value) {
+  return normalizeParam(value);
+});
 
 // HEAD (REQUEST) DATA
 
@@ -35,7 +43,12 @@ let totalBreedsNumber;
 let currentFilterBreedsNumber;
 let totalPages;
 
+let timeMouseDown;
+let timeMouseUp;
+
 // DOM DATA
+
+const buttons = document.querySelectorAll('button');
 
 // Radio elems
 const getExactBreedsRadio = document.getElementById('get_exact_radio');
@@ -69,6 +82,14 @@ const selectSortType = document.querySelector('.select-sort-type');
 const resetSortButton = document.querySelector('.reset-sort-btn');
 
 // Event listeners
+
+buttons.forEach((button) => {
+  button.addEventListener('mousedown', onMouseDown);
+  button.addEventListener('mouseup', onMouseUp);
+});
+
+document.addEventListener('mouseup', onMouseUp);
+
 // header
 getExactBreedsRadio.addEventListener('change', onRadio);
 getAllBreedsRadio.addEventListener('change', onRadio);
@@ -264,22 +285,18 @@ function cacheData(breedsData, storageKey) {
 }
 
 function createBreedsList(data) {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select the breed</option>';
-  const markup = defaultOption + data.map((cat) => `<option class="select-item" value=${cat.id}>${cat.name}</option>`).join('');
-  selectBlock.innerHTML = markup;
+  const template = Handlebars.compile(breedsListTpl);
+  selectBlock.innerHTML = template(data);
 }
 
 function createSortList() {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select sort param</option>';
-  const markup =
-    defaultOption + allFilterParams.map((param) => `<option class="select-item" value=${param}>${normalizeParam(param)}</option>`).join('');
-  selectSortFilter.insertAdjacentHTML('beforeend', markup);
+  const template = Handlebars.compile(sortListTpl);
+  selectSortFilter.insertAdjacentHTML('beforeend', template(allFilterParams));
 }
 
 function createSortTypes() {
-  const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select sort type</option>';
-  const markup = defaultOption + sortTypes.map((type) => `<option class="select-item" value=${type}>${type}</option>`).join('');
-  selectSortType.insertAdjacentHTML('beforeend', markup);
+  const template = Handlebars.compile(sortTypesTpl);
+  selectSortType.insertAdjacentHTML('beforeend', template(sortTypes));
 }
 
 // FUNCTIONS TO OPERATE EXACT BREED
@@ -302,22 +319,16 @@ function onSelectBreed(evt) {
 }
 
 function createExactBreedContentBlock(breedData) {
-  const breedName = breedData.breeds[0].name;
-  const breedDescription = breedData.breeds[0].description;
-  const breedTemperament = breedData.breeds[0].temperament;
-  const imgUrl = breedData.url;
+  const markupData = {
+    breedName: breedData.breeds[0].name,
+    breedDescription: breedData.breeds[0].description,
+    breedTemperament: breedData.breeds[0].temperament,
+    imgUrl: breedData.url,
+    paramTemperament: PARAM_TEMPERAMENT,
+  };
 
-  const markup = `
-    <div class="img-content">
-        <img class="cat-img" src="${imgUrl}" alt="${breedName}" />
-    </div>
-    <div class="text-content">
-        <h2 class="subtitle">${breedName}</h2>
-        <p class="text description">${breedDescription}</p>
-        <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
-    </div>`;
-
-  exactBreedContentBlock.innerHTML = markup;
+  const template = Handlebars.compile(exactBreedTpl);
+  exactBreedContentBlock.innerHTML = template(markupData);
 }
 
 // FUNCTIONS TO OPERATE ALL BREEDS
@@ -354,26 +365,18 @@ function onAllBreedsObserve(entries, observer) {
 function createAllBreedsContentBlock(breedData) {
   const filter = document.querySelector('.select-sort-filter').value;
   const cardSetMarkup = breedData.map((item) => {
-    const breedName = item.name;
-    const breedDescription = item.description;
-    const breedTemperament = item.temperament;
-    const imgUrl = item.image?.url ?? randomImg;
     const filterParam = filter ? `<p class="text params"><span class="param-name">${normalizeParam(filter)}: </span>${item[filter]}</p>` : '';
+    let markupData = {
+      breedName: item.name,
+      breedDescription: item.description,
+      breedTemperament: item.temperament,
+      imgUrl: item.image?.url ?? randomImg,
+      paramTemperament: PARAM_TEMPERAMENT,
+      filterParam: filterParam,
+    };
 
-    const cardMarkup = `
-      <li class="card-item">
-        <div class="img-content">
-            <img class="cat-img" src="${imgUrl}" alt="${breedName}" />
-        </div>
-        <div class="text-content">
-            <h2 class="subtitle">${breedName}</h2>
-            <p class="text description">${breedDescription}</p>
-            <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
-            ${filterParam}
-        </div>
-      </li>`;
-
-    return cardMarkup;
+    const template = Handlebars.compile(catCardTpl);
+    return template(markupData);
   });
 
   allBreedsList.insertAdjacentHTML('beforeend', cardSetMarkup.join(''));
@@ -383,23 +386,12 @@ function createAllBreedsContentBlock(breedData) {
 
 // Add filter button handlers
 function onAddFilter() {
-  const markup = `
-      <li class="filter-item">
-        <div class="filter-item-container">
-          <div class="main-filter-signature">
-            <select class="select-filter filter-signature-item">
-              ${createFiltersListMarkup()}
-            </select>
-            <button class="delete-filter filter-signature-item">Del</button>
-          </div>
-          <div class="secondary-filter-signature">
-            <select class="select-filter-type filter-signature-item hidden"></select>
-            <select class="select-filter-value filter-signature-item hidden"></select>
-          </div>
-        </div>
-      </li>
-    `;
-  filtersList.insertAdjacentHTML('afterbegin', markup);
+  const filtersListMarkup = createFiltersListMarkup();
+  const markupData = {
+    filtersListMarkup: filtersListMarkup,
+  };
+  const template = Handlebars.compile(addFiltersTpl);
+  filtersList.insertAdjacentHTML('afterbegin', template(markupData));
   FILTERS_CREATED += 1;
   existFilters();
 }
@@ -454,14 +446,8 @@ function selectFilter(evt) {
 
 function createFilterTypeOptions(filter) {
   const filterConditions = numberFilterParams.includes(filter) ? numberFilters : boolFilters;
-  const defaultOption = '<option class="select-option default-option" value="" disabled selected>Select condition</option>';
-  const markup = filterConditions
-    .map((condition) => {
-      return `<option class="select-option" value="${condition}">${condition}</option>`;
-    })
-    .join('');
-
-  return defaultOption + markup;
+  const template = Handlebars.compile(filterTypesTpl);
+  return template(filterConditions);
 }
 
 function createFilterValuesOptions(filter) {
@@ -624,4 +610,27 @@ function renderContent(data) {
   scrollToTop();
   removeHiddenAttr(allBreedsContentBlock);
   isContentBlockEmpty();
+}
+
+// HANDLE BUTTON CLICK
+
+function onMouseDown(evt) {
+  timeMouseDown = new Date();
+  const { target } = evt;
+  target.classList.add('active');
+}
+
+function onMouseUp() {
+  buttons.forEach((button) => {
+    if (button.classList.contains('active')) handleMouseUp(button);
+  });
+}
+
+function handleMouseUp(button) {
+  timeMouseUp = new Date();
+  const timeout = timeMouseUp - timeMouseDown < 300 ? 250 : 0;
+  setTimeout(() => {
+    button.classList.remove('active');
+    button.blur();
+  }, timeout);
 }
