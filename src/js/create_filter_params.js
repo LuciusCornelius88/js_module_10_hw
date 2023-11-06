@@ -1,6 +1,6 @@
 const numberFilters = ['>', '<', '===', '<=', '>=', '!=='];
 const boolFilters = ['===', '!=='];
-const sortTypes = ['Asc', 'Desc', 'Rand'];
+const sortTypes = ['Asc', 'Desc'];
 
 const numberFilterParams = [
   'indoor',

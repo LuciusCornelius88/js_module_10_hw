@@ -18,10 +18,15 @@
     />
 
     <link rel="stylesheet" href="./css/styles.css" />
-    <script src="index_2.js" type="module"></script>
+    <script src="index.js" type="module"></script>
   </head>
   <body>
     <header class="header">
+      <a class="logo" href="./index.html">
+        <svg class="logo-img" width="60" height="45">
+          <use href="./images/sprite.svg#cat-logo"></use>
+        </svg>
+      </a>
       <div class="request-opts-container">
         <div class="request-opts-radios">
           <label class="radio-item request-opts-item">
@@ -43,25 +48,26 @@
     <main class="main">
       <div class="main-wrapper">
         <section class="section filters-section">
-          <div class="container filters-container">
-            <div class="filter-buttons">
-              <div class="main-filter-buttons">
-                <button class="filter-btn add-filter-btn">Add Filter</button>
-                <button class="filter-btn apply-filters-btn" disabled>Apply</button>
+          <div class="filters-section-wrapper">
+            <div class="container filters-container">
+              <div class="filter-buttons">
+                <div class="main-filter-buttons">
+                  <button class="filter-btn add-filter-btn">Add Filter</button>
+                  <button class="filter-btn apply-filters-btn" disabled>Apply</button>
+                </div>
+                <div class="secondary-filter-buttons">
+                  <button class="filter-btn reset-filters-btn" disabled>Reset filters</button>
+                  <button class="filter-btn remove-filters-btn" disabled>Remove filters</button>
+                </div>
               </div>
-              <div class="secondary-filter-buttons">
-                <button class="filter-btn reset-filters-btn" disabled>Reset filters</button>
-                <button class="filter-btn remove-filters-btn" disabled>Remove filters</button>
-              </div>
+              <ul class="filters-list"></ul>
             </div>
-            <ul class="filters-list"></ul>
           </div>
         </section>
         <section class="section content-section">
           <div class="container sort-container">
             <select class="select-sort-filter select-sort-signature"></select>
             <select class="select-sort-type select-sort-signature"></select>
-            <button class="apply-sort-btn sort-btn">Apply</button>
             <button class="reset-sort-btn sort-btn">Reset</button>
           </div>
           <div class="container content-container">

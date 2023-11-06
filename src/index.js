@@ -1,6 +1,7 @@
 import { fetchBreeds, fetchCatByBreed } from './js/cat_api';
 import randomImg from './images/random-cat.jpg';
 import { numberFilterParams, boolFilterParams, numberFilters, boolFilters, allFilterParams, sortTypes } from './js/create_filter_params';
+import Notiflix from 'notiflix';
 
 // OBSERVER DATA
 
@@ -10,20 +11,29 @@ const observerOptions = {
   threshold: 1.0,
 };
 
-const observer = new IntersectionObserver(onObserve, observerOptions);
+const allBreedsObserver = new IntersectionObserver(onAllBreedsObserve, observerOptions);
+const filterObserver = new IntersectionObserver(onFilterObserve, observerOptions);
 
 // HEAD (REQUEST) DATA
 
-const LOCAL_STORAGE_KEY_ALL_BREEDS = 'all_breeds';
+const PARAM_TEMPERAMENT = 'Temperament';
+const ASCENDING = 'Asc';
+const ALL_BREEDS_STORAGE_KEY = 'breeds';
+const CURRENT_FILTER_STORAGE_KEY = 'current_filter';
+const SORTED_STORAGE_KEY = 'sorted';
 const GET_EXACT_REQUEST = 'get_exact_breed';
 const GET_ALL_REQUEST = 'get_all_breeds';
-const SELECT_ALL_PARAMS = {
-  limit: 10,
-  page: 0,
-};
+const LIMIT_PER_REQUEST = 10;
+const UPDATE_PERIOD = 24 * 60 * 60 * 1000;
+
+let CURRENT_PAGE = 0;
 let USED_FILTERS = [];
 let FILTERS_CREATED = 0;
+let filterApplied;
+let sorted;
 let totalBreedsNumber;
+let currentFilterBreedsNumber;
+let totalPages;
 
 // DOM DATA
 
@@ -44,12 +54,8 @@ const allBreedsList = document.querySelector('.breeds-list');
 // Threshold for infinite scroll
 const thresholdBlock = document.querySelector('.threshold');
 
-// Main wrapper
-const mainWrapper = document.querySelector('.main-wrapper');
-
 // Filters
 const filterSection = document.querySelector('.filters-section');
-const filtersContainer = document.querySelector('.filters-container');
 const addFilterButton = document.querySelector('.add-filter-btn');
 const applyFilterButton = document.querySelector('.apply-filters-btn');
 const resetFiltersButton = document.querySelector('.reset-filters-btn');
@@ -60,20 +66,27 @@ const filtersList = document.querySelector('.filters-list');
 const sortContainer = document.querySelector('.sort-container');
 const selectSortFilter = document.querySelector('.select-sort-filter');
 const selectSortType = document.querySelector('.select-sort-type');
-const applySortButton = document.querySelector('.apply-sort-btn');
 const resetSortButton = document.querySelector('.reset-sort-btn');
 
 // Event listeners
+// header
 getExactBreedsRadio.addEventListener('change', onRadio);
 getAllBreedsRadio.addEventListener('change', onRadio);
 selectBlock.addEventListener('change', onSelectBreed);
 getAllBreedsBtn.addEventListener('click', onSelectAll);
+
+// filters
 addFilterButton.addEventListener('click', onAddFilter);
 filtersList.addEventListener('click', deleteFilter);
 filtersList.addEventListener('change', selectFilter);
 applyFilterButton.addEventListener('click', applyFilters);
 resetFiltersButton.addEventListener('click', resetFilters);
 removeFiltersButton.addEventListener('click', removeFilters);
+
+// sort
+selectSortFilter.addEventListener('change', onSelectSortFilter);
+selectSortType.addEventListener('change', onSelectSortType);
+resetSortButton.addEventListener('click', resetSort);
 
 // SUPPLEMENTARY FUNCTIONS
 
@@ -90,27 +103,11 @@ const removeHiddenAttr = (obj) => {
 };
 
 const resetGetAllParams = () => {
-  SELECT_ALL_PARAMS.page = 0;
-};
-
-const incrementPages = () => {
-  SELECT_ALL_PARAMS.page += 1;
+  CURRENT_PAGE = 0;
 };
 
 const resetContent = (elem) => {
   elem.innerHTML = '';
-};
-
-const handleErrors = (err) => {
-  //   addHiddenAttr(loaderMessage);
-  //   removeHiddenAttr(errorMessage);
-
-  console.log('Code: ', err.code);
-  console.log('Message: ', err.message);
-
-  if (err.response) {
-    console.log('Response message: ', err.response.data.message);
-  }
 };
 
 const handleCheckedRadio = (target) => {
@@ -157,11 +154,64 @@ const existFilters = () => {
   }
 };
 
-const setFilterSticky = () => {
-  if (filtersContainer.clientHeight < filterSection.clientHeight) {
-    filtersContainer.style.position = 'sticky';
-    filtersContainer.style.top = 0;
+const updateCache = () => {
+  setInterval(async () => {
+    try {
+      const breedsData = await fetchBreeds();
+      cacheData(breedsData, ALL_BREEDS_STORAGE_KEY);
+      createBreedsList(breedsData);
+    } catch (err) {
+      Notiflix.Notify.failure(`Error ${err.code}: ${err.message}`);
+    }
+  }, UPDATE_PERIOD);
+};
+
+const scrollToTop = () => {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  });
+};
+
+const getAllFiltersData = () => {
+  return Array.from(filtersList.children).map((filter) => {
+    const filterParam = filter.querySelector('.select-filter').value;
+    const filterOperand = filter.querySelector('.select-filter-type').value;
+    const filterValue = filter.querySelector('.select-filter-value').value;
+
+    return {
+      param: filterParam,
+      operand: filterOperand,
+      value: filterValue,
+    };
+  });
+};
+
+const isContentBlockEmpty = () => {
+  if (allBreedsList.innerHTML) {
+    selectSortFilter.disabled = false;
+  } else {
+    selectSortFilter.disabled = true;
+    selectSortType.disabled = true;
+    resetSortButton.disabled = true;
   }
+};
+
+const renderDefaultBreeds = () => {
+  if (filterApplied) {
+    scrollToTop();
+    setTimeout(() => {
+      onSelectAll();
+    }, 100);
+  }
+};
+
+const sortAscending = (filter, normalizedCachedBreeds) => {
+  return normalizedCachedBreeds.sort((firstBreed, secondBreed) => firstBreed[filter] - secondBreed[filter]);
+};
+
+const sortDescending = (filter, normalizedCachedBreeds) => {
+  return normalizedCachedBreeds.sort((firstBreed, secondBreed) => secondBreed[filter] - firstBreed[filter]);
 };
 
 // MAIN BUSINESS LOGIC
@@ -172,33 +222,57 @@ function onRadio(evt) {
   handleCheckedRadio(evt.target);
 }
 
-async function onLoad() {
-  handleCheckedRadio(checkedRadio);
-  setFilterSticky();
+function onLoad() {
+  Notiflix.Loading.dots();
+  setTimeout(async () => {
+    handleCheckedRadio(checkedRadio);
+    const cachedData = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+    let breedsData;
 
-  try {
-    const data = await fetchBreeds();
-    totalBreedsNumber = data.length;
-    createBreedsList(data);
+    if (!cachedData) {
+      try {
+        breedsData = await fetchBreeds();
+        cacheData(breedsData, ALL_BREEDS_STORAGE_KEY);
+      } catch (err) {
+        Notiflix.Loading.remove();
+        Notiflix.Notify.failure(`Error ${err.code}: ${err.message}`);
+      }
+    } else {
+      breedsData = Object.values(cachedData).flat();
+      totalBreedsNumber = breedsData.length;
+    }
+
+    createBreedsList(breedsData);
+    isContentBlockEmpty();
     createSortList();
     createSortTypes();
+    updateCache();
+    Notiflix.Loading.remove();
+  }, 1000);
+}
 
-    // addHiddenAttr(loaderMessage);
-    removeHiddenAttr(selectBlock);
-  } catch (err) {
-    handleErrors(err);
+function cacheData(breedsData, storageKey) {
+  totalBreedsNumber = breedsData.length;
+  totalPages = Math.ceil(totalBreedsNumber / LIMIT_PER_REQUEST);
+
+  const cache = {};
+  for (let i = 0; i < totalPages; i++) {
+    cache[i] = breedsData.slice(i * LIMIT_PER_REQUEST, (i + 1) * LIMIT_PER_REQUEST);
   }
+
+  localStorage.setItem(storageKey, JSON.stringify(cache));
 }
 
 function createBreedsList(data) {
   const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select the breed</option>';
   const markup = defaultOption + data.map((cat) => `<option class="select-item" value=${cat.id}>${cat.name}</option>`).join('');
-  selectBlock.insertAdjacentHTML('beforeend', markup);
+  selectBlock.innerHTML = markup;
 }
 
 function createSortList() {
   const defaultOption = '<option class="select-item default-option" value="" disabled selected>Select sort param</option>';
-  const markup = defaultOption + allFilterParams.map((param) => `<option class="select-item" value=${param}>${param}</option>`).join('');
+  const markup =
+    defaultOption + allFilterParams.map((param) => `<option class="select-item" value=${param}>${normalizeParam(param)}</option>`).join('');
   selectSortFilter.insertAdjacentHTML('beforeend', markup);
 }
 
@@ -210,21 +284,21 @@ function createSortTypes() {
 
 // FUNCTIONS TO OPERATE EXACT BREED
 
-async function onSelectBreed(evt) {
+function onSelectBreed(evt) {
   const breedId = evt.currentTarget.value;
-
-  addHiddenAttr(exactBreedContentBlock);
-  //   removeHiddenAttr(loaderMessage);
-  //   addHiddenAttr(errorMessage);
-
-  try {
-    const data = await fetchCatByBreed(breedId);
-    createExactBreedContentBlock(data[0]);
-    // addHiddenAttr(loaderMessage);
-    removeHiddenAttr(exactBreedContentBlock);
-  } catch (err) {
-    handleErrors(err);
-  }
+  Notiflix.Loading.dots();
+  setTimeout(async () => {
+    addHiddenAttr(exactBreedContentBlock);
+    try {
+      const data = await fetchCatByBreed(breedId);
+      createExactBreedContentBlock(data[0]);
+      removeHiddenAttr(exactBreedContentBlock);
+      Notiflix.Loading.remove();
+    } catch (err) {
+      Notiflix.Loading.remove();
+      Notiflix.Notify.failure(`Error ${err.code}: ${err.message}`);
+    }
+  }, 1000);
 }
 
 function createExactBreedContentBlock(breedData) {
@@ -233,11 +307,6 @@ function createExactBreedContentBlock(breedData) {
   const breedTemperament = breedData.breeds[0].temperament;
   const imgUrl = breedData.url;
 
-  let paramTemperament = Object.keys(breedData.breeds[0])
-    .filter((item) => item === 'temperament')
-    .toString();
-  paramTemperament = paramTemperament.replace(/^./, paramTemperament[0].toUpperCase());
-
   const markup = `
     <div class="img-content">
         <img class="cat-img" src="${imgUrl}" alt="${breedName}" />
@@ -245,7 +314,7 @@ function createExactBreedContentBlock(breedData) {
     <div class="text-content">
         <h2 class="subtitle">${breedName}</h2>
         <p class="text description">${breedDescription}</p>
-        <p class="text params"><span class="param-name">${paramTemperament}: </span>${breedTemperament}</p>
+        <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
     </div>`;
 
   exactBreedContentBlock.innerHTML = markup;
@@ -253,55 +322,43 @@ function createExactBreedContentBlock(breedData) {
 
 // FUNCTIONS TO OPERATE ALL BREEDS
 
-async function onSelectAll() {
-  addHiddenAttr(allBreedsContentBlock);
-  addHiddenAttr(filtersContainer);
-  //   removeHiddenAttr(loaderMessage);
-  //   addHiddenAttr(errorMessage);
-  resetContent(allBreedsList);
-  resetGetAllParams();
-
-  try {
-    const data = await fetchBreeds(SELECT_ALL_PARAMS);
-    createAllBreedsContentBlock(data);
-    // addHiddenAttr(loaderMessage);
-    removeHiddenAttr(filtersContainer);
-    removeHiddenAttr(allBreedsContentBlock);
-    observer.observe(thresholdBlock);
-  } catch (err) {
-    handleErrors(err);
-  }
+function onSelectAll() {
+  Notiflix.Loading.dots();
+  setTimeout(() => {
+    const data = sorted ? JSON.parse(localStorage.getItem(SORTED_STORAGE_KEY)) : JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+    totalBreedsNumber = Object.values(data).flat().length;
+    resetGetAllParams();
+    renderContent(data[CURRENT_PAGE.toString()]);
+    filterApplied = false;
+    filterObserver.unobserve(thresholdBlock);
+    allBreedsObserver.observe(thresholdBlock);
+    Notiflix.Loading.remove();
+  }, 1000);
 }
 
-function onObserve(entries, observer) {
-  entries.forEach(async (entry) => {
+function onAllBreedsObserve(entries, observer) {
+  entries.forEach((entry) => {
     if (entry.isIntersecting && allBreedsList.innerHTML !== '') {
-      incrementPages();
-
-      try {
-        const data = await fetchBreeds(SELECT_ALL_PARAMS);
-        createAllBreedsContentBlock(data);
-        // addHiddenAttr(loaderMessage);
-        removeHiddenAttr(allBreedsContentBlock);
-
-        if (totalBreedsNumber <= SELECT_ALL_PARAMS.limit * (SELECT_ALL_PARAMS.page + 1)) {
-          observer.unobserve(thresholdBlock);
-          resetGetAllParams();
-        }
-      } catch (err) {
-        handleErrors(err);
+      if (totalBreedsNumber <= LIMIT_PER_REQUEST * (CURRENT_PAGE + 1)) {
+        observer.unobserve(thresholdBlock);
+        resetGetAllParams();
+      } else {
+        CURRENT_PAGE += 1;
+        const data = sorted ? JSON.parse(localStorage.getItem(SORTED_STORAGE_KEY)) : JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+        createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
       }
     }
   });
 }
 
 function createAllBreedsContentBlock(breedData) {
-  const paramTemperament = 'Temperament';
+  const filter = document.querySelector('.select-sort-filter').value;
   const cardSetMarkup = breedData.map((item) => {
     const breedName = item.name;
     const breedDescription = item.description;
     const breedTemperament = item.temperament;
     const imgUrl = item.image?.url ?? randomImg;
+    const filterParam = filter ? `<p class="text params"><span class="param-name">${normalizeParam(filter)}: </span>${item[filter]}</p>` : '';
 
     const cardMarkup = `
       <li class="card-item">
@@ -311,7 +368,8 @@ function createAllBreedsContentBlock(breedData) {
         <div class="text-content">
             <h2 class="subtitle">${breedName}</h2>
             <p class="text description">${breedDescription}</p>
-            <p class="text params"><span class="param-name">${paramTemperament}: </span>${breedTemperament}</p>
+            <p class="text params"><span class="param-name">${PARAM_TEMPERAMENT}: </span>${breedTemperament}</p>
+            ${filterParam}
         </div>
       </li>`;
 
@@ -353,56 +411,44 @@ function createFiltersListMarkup(currentValue = null) {
 
   const markup =
     '<optgroup label="Number filters">' +
-    numberFilterParams
-      .map((param) => {
-        if (USED_FILTERS.includes(param) && param !== currentValue) {
-          return;
-        }
-        const normalizedParam = normalizeParam(param);
-        return param === currentValue
-          ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
-          : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
-      })
-      .join('') +
+    createFilterOptGroupMarkup(numberFilterParams, currentValue).join('') +
     '</optgroup>' +
     '<optgroup label="Boolean filters">' +
-    boolFilterParams
-      .map((param) => {
-        if (USED_FILTERS.includes(param) && param !== currentValue) {
-          return;
-        }
-        const normalizedParam = normalizeParam(param);
-        return param === currentValue
-          ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
-          : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
-      })
-      .join('') +
+    createFilterOptGroupMarkup(boolFilterParams, currentValue).join('') +
     '</optgroup>';
 
   return defaultOption + markup;
 }
 
+function createFilterOptGroupMarkup(filterParamsList, currentValue) {
+  return filterParamsList.map((param) => {
+    if (USED_FILTERS.includes(param) && param !== currentValue) {
+      return;
+    }
+    const normalizedParam = normalizeParam(param);
+    return param === currentValue
+      ? `<option class="select-option" value="${param}" selected>${normalizedParam}</option>`
+      : `<option class="select-option" value="${param}">${normalizedParam}</option>`;
+  });
+}
+
 // Select filter options handlers
-async function selectFilter(evt) {
+function selectFilter(evt) {
   if (evt.target.classList.contains('select-filter')) {
     const filter = evt.target.value;
     USED_FILTERS.push(filter);
 
-    const container = evt.target.closest('.filter-item-container');
     const allFilterSelects = filtersList.querySelectorAll('.select-filter');
     allFilterSelects.forEach((select) => (select.innerHTML = createFiltersListMarkup(select.value)));
 
+    const container = evt.target.closest('.filter-item-container');
     const selectFilterType = container.querySelector('.select-filter-type');
     const selectFilterValue = container.querySelector('.select-filter-value');
-    selectFilterType.innerHTML = createFilterTypeOptions(filter);
-    removeHiddenAttr(selectFilterType);
 
-    try {
-      selectFilterValue.innerHTML = await createFilterValuesOptions(filter);
-      removeHiddenAttr(selectFilterValue);
-    } catch (err) {
-      handleErrors(err);
-    }
+    selectFilterType.innerHTML = createFilterTypeOptions(filter);
+    selectFilterValue.innerHTML = createFilterValuesOptions(filter);
+    removeHiddenAttr(selectFilterType);
+    removeHiddenAttr(selectFilterValue);
   }
 }
 
@@ -418,35 +464,23 @@ function createFilterTypeOptions(filter) {
   return defaultOption + markup;
 }
 
-async function createFilterValuesOptions(filter) {
-  try {
-    const { minValue, maxValue } = await getFilterMinMaxValues(filter);
-    const defaultOption = '<option class="select-option default-option" value="" disabled selected>Select condition</option>';
+function createFilterValuesOptions(filter) {
+  const { minValue, maxValue } = getFilterMinMaxValues(filter);
+  const defaultOption = '<option class="select-option default-option" value="" disabled selected>Select condition</option>';
 
-    const markup = [];
-    for (let i = minValue; i <= maxValue; i++) {
-      markup.push(`<option class="select-option" value="${i}">${i}</option>`);
-    }
-
-    return defaultOption + markup.join('');
-  } catch (err) {
-    handleErrors(err);
+  const markup = [];
+  for (let i = minValue; i <= maxValue; i++) {
+    markup.push(`<option class="select-option" value="${i}">${i}</option>`);
   }
+
+  return defaultOption + markup.join('');
 }
 
-async function getFilterMinMaxValues(filter) {
-  let allBreeds = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY_ALL_BREEDS));
-
-  if (!allBreeds) {
-    try {
-      allBreeds = await fetchBreeds();
-      localStorage.setItem(LOCAL_STORAGE_KEY_ALL_BREEDS, JSON.stringify(allBreeds));
-    } catch (err) {
-      handleErrors(err);
-    }
-  }
-
-  const values = allBreeds.map((item) => item[filter]);
+function getFilterMinMaxValues(filter) {
+  let allBreeds = JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+  const values = Object.values(allBreeds)
+    .flat()
+    .map((breed) => breed[filter]);
   return { minValue: Math.min(...values), maxValue: Math.max(...values) };
 }
 
@@ -459,12 +493,16 @@ function deleteFilter(evt) {
     if (filterValue) {
       USED_FILTERS.splice(USED_FILTERS.indexOf(filterValue), 1);
     }
-    FILTERS_CREATED -= 1;
 
     const allFilterSelects = filtersList.querySelectorAll('.select-filter');
     allFilterSelects.forEach((select) => (select.innerHTML = createFiltersListMarkup(select.value)));
 
     filterItem.remove();
+
+    FILTERS_CREATED -= 1;
+    if (!FILTERS_CREATED) {
+      renderDefaultBreeds();
+    }
     existFilters();
   }
 }
@@ -474,45 +512,116 @@ function removeFilters() {
   FILTERS_CREATED = 0;
   filtersList.innerHTML = '';
   existFilters();
+  Notiflix.Loading.dots();
+  setTimeout(() => {
+    renderDefaultBreeds();
+    Notiflix.Loading.remove();
+  }, 1000);
 }
 
 function resetFilters() {
   USED_FILTERS = [];
   const allFilters = filtersList.querySelectorAll('select');
   allFilters.forEach((filter) => (filter.selectedIndex = 0));
-
   const allFilterSelects = filtersList.querySelectorAll('.select-filter');
   allFilterSelects.forEach((select) => (select.innerHTML = createFiltersListMarkup()));
+
+  if (filterApplied) {
+    scrollToTop();
+  }
 }
 
-async function applyFilters() {
-  const fiterInput = Array.from(filtersList.children).map((filter) => {
-    const filterParam = filter.querySelector('.select-filter').value;
-    const filterOperand = filter.querySelector('.select-filter-type').value;
-    const filterValue = filter.querySelector('.select-filter-value').value;
+function applyFilters() {
+  Notiflix.Loading.dots();
+  setTimeout(() => {
+    const fiterInput = getAllFiltersData();
+    const allBreeds = sorted ? JSON.parse(localStorage.getItem(SORTED_STORAGE_KEY)) : JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+    const filteredBreeds = Object.values(allBreeds)
+      .flat()
+      .filter((breed) => {
+        return fiterInput.every((input) => {
+          return eval(breed[input.param] + input.operand + input.value);
+        });
+      });
 
-    return {
-      param: filterParam,
-      operand: filterOperand,
-      value: filterValue,
-    };
-  });
-
-  const allBreeds = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY_ALL_BREEDS));
-  const filteredBreeds = allBreeds.filter((breed) => {
-    return fiterInput.every((input) => {
-      return eval(breed[input.param] + input.operand + input.value);
-    });
-  });
-
-  renderFiltered(filteredBreeds);
+    currentFilterBreedsNumber = filteredBreeds.length;
+    if (currentFilterBreedsNumber) {
+      cacheData(filteredBreeds, CURRENT_FILTER_STORAGE_KEY);
+      const cachedCurrentFilter = JSON.parse(localStorage.getItem(CURRENT_FILTER_STORAGE_KEY));
+      resetGetAllParams();
+      renderContent(cachedCurrentFilter[CURRENT_PAGE.toString()]);
+      filterApplied = true;
+      allBreedsObserver.unobserve(thresholdBlock);
+      filterObserver.observe(thresholdBlock);
+      Notiflix.Loading.remove();
+    } else {
+      Notiflix.Loading.remove();
+      Notiflix.Notify.failure('There are no breeds that correspond the given filters!');
+    }
+  }, 1000);
 }
 
-function renderFiltered(data) {
+function onFilterObserve(entries, observer) {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting && allBreedsList.innerHTML !== '') {
+      if (currentFilterBreedsNumber <= LIMIT_PER_REQUEST * (CURRENT_PAGE + 1)) {
+        observer.unobserve(thresholdBlock);
+        resetGetAllParams();
+      } else {
+        CURRENT_PAGE += 1;
+        const data = JSON.parse(localStorage.getItem(CURRENT_FILTER_STORAGE_KEY));
+        createAllBreedsContentBlock(data[CURRENT_PAGE.toString()]);
+      }
+    }
+  });
+}
+
+// SORT
+function onSelectSortFilter() {
+  selectSortType.disabled = false;
+}
+
+function onSelectSortType(evt) {
+  Notiflix.Loading.dots();
+  setTimeout(() => {
+    const sortType = evt.target.value;
+    const filter = selectSortFilter.value;
+    const typeOfCacheKey = filterApplied ? CURRENT_FILTER_STORAGE_KEY : ALL_BREEDS_STORAGE_KEY;
+    const cachedBreeds = JSON.parse(localStorage.getItem(typeOfCacheKey));
+    const normalizedCachedBreeds = Object.values(cachedBreeds).flat();
+    const sortedContent = sortType === ASCENDING ? sortAscending(filter, normalizedCachedBreeds) : sortDescending(filter, normalizedCachedBreeds);
+    cacheData(sortedContent, SORTED_STORAGE_KEY);
+    const contentToRender = Object.values(JSON.parse(localStorage.getItem(SORTED_STORAGE_KEY)))
+      .slice(0, CURRENT_PAGE + 1)
+      .flat();
+    renderContent(contentToRender);
+    resetSortButton.disabled = false;
+    sorted = true;
+    Notiflix.Loading.remove();
+  }, 1000);
+}
+
+function resetSort() {
+  selectSortFilter.selectedIndex = 0;
+  selectSortType.selectedIndex = 0;
+  selectSortType.disabled = true;
+  resetSortButton.disabled = true;
+  const cachedContent = filterApplied
+    ? JSON.parse(localStorage.getItem(CURRENT_FILTER_STORAGE_KEY))
+    : JSON.parse(localStorage.getItem(ALL_BREEDS_STORAGE_KEY));
+  const contentToRender = Object.values(cachedContent)
+    .slice(0, CURRENT_PAGE + 1)
+    .flat();
+  renderContent(contentToRender);
+  sorted = false;
+}
+
+// Render
+function renderContent(data) {
   addHiddenAttr(allBreedsContentBlock);
   resetContent(allBreedsList);
-  resetGetAllParams();
   createAllBreedsContentBlock(data);
+  scrollToTop();
   removeHiddenAttr(allBreedsContentBlock);
-  observer.unobserve(thresholdBlock);
+  isContentBlockEmpty();
 }
