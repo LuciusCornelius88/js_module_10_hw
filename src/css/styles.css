@@ -43,6 +43,7 @@ img {
 select {
   border: 1px solid #385157;
   border-radius: 25px;
+  font-size: 14px;
   background-color: transparent;
 }
 
@@ -53,8 +54,7 @@ select:focus {
 button {
   border: 1px solid #385157;
   border-radius: 25px;
-  font-size: 12px;
-  line-height: 1.33;
+  font-size: 14px;
   background-color: transparent;
   transition: color var(--transition-duration-and-func), background-color var(--transition-duration-and-func),
     box-shadow var(--transition-duration-and-func);
