@@ -17,7 +17,7 @@ const catCardTpl = `
         <h2 class="subtitle">{{breedName}}</h2>
         <p class="text description">{{breedDescription}}</p>
         <p class="text params"><span class="param-name">{{paramTemperament}}: </span>{{breedTemperament}}</p>
-        {{filterParam}}
+        {{{filterParam}}}
     </div>
   </li>`;
 
